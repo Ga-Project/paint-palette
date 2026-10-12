@@ -1,0 +1,796 @@
+/* paint-palette — "Wet Palette Tray（濡れパレット）" のデザインシステム。
+ *
+ * 世界観: 模型塗装の保湿パレット。UIクロームは無彩色の暖かい作業マットで、
+ * ブランドアクセントの色相を持たない。色はすべてユーザーの塗料（ダブ）から来る。
+ * 主surface は単一の inset トレイ（well）で、塗料ダブが flex-wrap で自由に並ぶ。
+ * カード・マストヘッド・縦積みセクション・棚・帳票・計器は使わない。
+ *
+ * 機能的リセット（box-sizing / focus-visible / reduced-motion）はこのファイル内で維持する。 */
+
+/* ---------------------------------------------------------------- reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+* {
+  margin: 0;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- tokens (light) */
+:root {
+  --bg: #efebe4; /* bench mat */
+  --surface-raised: #fbf9f5; /* 登録フォーム / drawer */
+  --surface-inset: #e4ded4; /* palette well */
+  --ink: #26221c;
+  --ink-secondary: #5e574c;
+  --hairline: #cfc7b8; /* 装飾セパレータ専用 */
+  --border-control: #7d7460; /* 入力/操作要素の輪郭（識別に必須の境界・全 surface で 3:1 以上） */
+  --focus: #26221c; /* リング色（無彩・アクセント不使用） */
+  --alert: #a6412e; /* 重複/エラーの text+icon 専用の意味色 */
+  --shadow-well: inset 0 2px 5px rgba(0, 0, 0, 0.1);
+  --shadow-dab: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-raised: 0 8px 30px rgba(38, 34, 28, 0.14);
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans JP", sans-serif;
+
+  --maxw: 1040px;
+  --radius-dab: 30%;
+  --radius-control: 10px;
+}
+
+/* dark: OS 既定（明示 data-theme が無いときだけ）と、明示切替の両方 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #1a1712;
+    --surface-raised: #221e18;
+    --surface-inset: #14110d;
+    --ink: #ede7dc;
+    --ink-secondary: #b3a996;
+    --hairline: #322c24;
+    --border-control: #847a66;
+    --focus: #ede7dc;
+    --alert: #e8836b;
+    --shadow-well: inset 0 2px 6px rgba(0, 0, 0, 0.4);
+    --shadow-dab: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-raised: 0 10px 34px rgba(0, 0, 0, 0.5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1712;
+  --surface-raised: #221e18;
+  --surface-inset: #14110d;
+  --ink: #ede7dc;
+  --ink-secondary: #b3a996;
+  --hairline: #322c24;
+  --border-control: #6e6656;
+  --focus: #ede7dc;
+  --alert: #e8836b;
+  --shadow-well: inset 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-dab: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-raised: 0 10px 34px rgba(0, 0, 0, 0.5);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+/* 数値は同一書体＋桁揃え */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- a11y basics */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: -60px;
+  z-index: 50;
+  background: var(--surface-raised);
+  color: var(--ink);
+  padding: 10px 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-control);
+  box-shadow: var(--shadow-raised);
+  transition: top 120ms ease-out;
+}
+.skip-link:focus {
+  top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------- shell */
+.page {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 clamp(12px, 4vw, 28px) 64px;
+}
+
+/* Bench Rail（機能レール・薄い水平ストリップ。マストヘッドではない） */
+.bench-rail {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 2px;
+  flex-wrap: wrap;
+}
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+}
+.wordmark-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-dab);
+  background: conic-gradient(
+    from 210deg,
+    #d24a3a,
+    #e6a13a,
+    #4f9d68,
+    #3f6bb0,
+    #7d5aa6,
+    #d24a3a
+  );
+  box-shadow: var(--shadow-dab), inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  position: relative;
+  flex: none;
+}
+.wordmark-mark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(60% 45% at 32% 24%, rgba(255, 255, 255, 0.55), transparent 70%);
+}
+.wordmark-text {
+  font-size: 1.05rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.wordmark-sub {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 560;
+  letter-spacing: 0.08em;
+  color: var(--ink-secondary);
+  text-transform: uppercase;
+}
+
+/* Capacity meter（容量計・端の機械的リップまで満ちる） */
+.capacity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9375rem;
+}
+.capacity-label {
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+.capacity-count {
+  font-weight: 600;
+}
+.capacity-count.is-full {
+  color: var(--alert);
+}
+.capacity-bar {
+  width: 120px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-well);
+  overflow: hidden;
+  border: 1px solid var(--border-control);
+}
+.capacity-fill {
+  height: 100%;
+  background: var(--ink-secondary);
+  transition: width 120ms ease-out;
+}
+.capacity-fill.is-full {
+  background: var(--alert);
+}
+
+/* buttons */
+.btn {
+  --_bg: var(--surface-raised);
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-control);
+  background: var(--_bg);
+  color: var(--ink);
+  font-weight: 560;
+  cursor: pointer;
+  transition: transform 100ms ease-out, background 120ms ease-out;
+}
+.btn:hover {
+  background: color-mix(in srgb, var(--surface-raised) 82%, var(--ink) 6%);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.btn-primary {
+  --_bg: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+  font-weight: 620;
+}
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--ink) 88%, var(--bg));
+}
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.btn-ghost:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+/* ---------------------------------------------------------------- palette well (主surface) */
+.well {
+  background: var(--surface-inset);
+  border-radius: 18px;
+  box-shadow: var(--shadow-well);
+  border: 1px solid var(--border-control); /* 主 surface の縁は空/0件時も 3:1 で視認できる */
+  padding: clamp(14px, 3vw, 26px);
+  min-height: 240px;
+}
+.well-group + .well-group {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--hairline);
+}
+.well-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.well-group-name {
+  font-size: 0.8125rem;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  color: var(--ink-secondary);
+}
+.well-group-count {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+.dabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+/* Dab（濡れエナメルのダブ） */
+.dab {
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dab-chip {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 132px;
+  border-radius: var(--radius-dab);
+  background: var(--dab-fill, #888);
+  box-shadow:
+    var(--shadow-dab),
+    inset 0 0 0 1px color-mix(in srgb, var(--dab-ink, #000) 25%, transparent);
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  overflow: hidden;
+  transition: transform 120ms ease-out;
+}
+.dab-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    58% 42% at 32% 24%,
+    rgba(255, 255, 255, 0.3),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+.dab-chip:hover {
+  transform: translateY(-2px);
+}
+/* 選択中は縁のリングで示す（色に頼らない・下に削除ボタンが出る導線を補強）。 */
+.dab-chip[aria-pressed="true"] {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.dab-code {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-size: 0.6875rem;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--dab-ink, #000);
+  background: color-mix(in srgb, var(--dab-fill, #888) 62%, var(--dab-ink, #000) 0%);
+  font-variant-numeric: tabular-nums;
+}
+.dab-label {
+  min-width: 0;
+}
+.dab-name {
+  font-size: 0.95rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.dab-meta {
+  font-size: 0.8125rem;
+  font-weight: 560;
+  letter-spacing: 0.02em;
+  color: var(--ink-secondary);
+  overflow-wrap: anywhere;
+}
+.dab.is-new .dab-chip {
+  animation: dab-settle 160ms ease-out;
+}
+@keyframes dab-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 空ウェル（初回）: ゴーストのダブ輪郭 */
+.well-empty {
+  display: grid;
+  place-items: center;
+  gap: 18px;
+  min-height: 200px;
+  text-align: center;
+}
+.ghost-dabs {
+  display: flex;
+  gap: 14px;
+}
+.ghost-dab {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-dab);
+  border: 2px dashed var(--hairline);
+}
+.well-empty-text {
+  color: var(--ink-secondary);
+  max-width: 34ch;
+}
+.well-empty-text strong {
+  color: var(--ink);
+  font-weight: 620;
+}
+
+/* 絞り込み0件 */
+.well-noresult {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  min-height: 160px;
+  color: var(--ink-secondary);
+  text-align: center;
+}
+
+/* 復元スケルトン */
+.skeleton-dab {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-dab);
+  background: var(--ink-secondary); /* well 上で視認できるトーン（hairline は薄すぎて空に見える） */
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* ---------------------------------------------------------------- filter rail */
+.filter-rail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 16px 2px 14px;
+}
+.seg {
+  display: inline-flex;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-control);
+  overflow: hidden;
+}
+.seg-btn {
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--surface-raised);
+  color: var(--ink-secondary);
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 560;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--border-control);
+}
+.seg-btn[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--bg);
+}
+.field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+select.control,
+input.control {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+input.control::placeholder {
+  color: var(--ink-secondary);
+}
+.filter-search {
+  margin-left: auto;
+  min-width: 180px;
+}
+/* モバイルでは右寄せ(margin-left:auto)をやめ、検索欄をフル幅にする（左の余白割れ防止）。 */
+@media (max-width: 720px) {
+  .filter-search {
+    margin-left: 0;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- drawer / bottom-sheet */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 17, 13, 0.44);
+  z-index: 40;
+  animation: fade 160ms ease-out;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.drawer {
+  position: fixed;
+  z-index: 41;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-raised);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in 180ms ease-out;
+}
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* desktop = 右 drawer */
+@media (min-width: 721px) {
+  .drawer {
+    top: 0;
+    right: 0;
+    height: 100dvh;
+    width: min(420px, 92vw);
+    border-left: 1px solid var(--hairline);
+  }
+}
+/* mobile = bottom-sheet */
+@media (max-width: 720px) {
+  .drawer {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 92dvh;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-top: 1px solid var(--hairline);
+  }
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+.drawer-title {
+  font-size: 1.125rem;
+  font-weight: 620;
+  letter-spacing: -0.005em;
+}
+.drawer-body {
+  padding: 4px 20px 24px;
+  overflow-y: auto;
+}
+
+/* form */
+.slip-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-inset);
+  box-shadow: var(--shadow-well);
+  margin-bottom: 18px;
+}
+.slip-preview .dab-chip {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  cursor: default;
+}
+.slip-preview .dab-chip:hover {
+  transform: none;
+}
+.slip-note {
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+.field-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 560;
+  margin-bottom: 6px;
+}
+.field-label .req {
+  color: var(--alert);
+  margin-left: 4px;
+}
+.field input,
+.field select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-control);
+  background: var(--bg);
+  color: var(--ink);
+}
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.field-color {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.field-color input[type="color"] {
+  width: 52px;
+  min-height: 46px;
+  padding: 4px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-control);
+  background: var(--bg);
+  cursor: pointer;
+}
+.field-color input[type="text"] {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+.field-error {
+  color: var(--alert);
+  font-size: 0.8125rem;
+  margin-top: 6px;
+}
+
+/* callouts */
+.callout {
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
+}
+.callout-alert {
+  border-color: var(--alert);
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 620;
+  color: var(--alert);
+  margin-bottom: 6px;
+}
+.callout-body {
+  font-size: 0.9375rem;
+  color: var(--ink);
+}
+.dupe-compare {
+  display: flex;
+  gap: 18px;
+  margin-top: 12px;
+}
+.dupe-col {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  font-size: 0.8125rem;
+  color: var(--ink-secondary);
+}
+.dupe-col .dab-chip {
+  width: 60px;
+  height: 60px;
+  cursor: default;
+}
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.form-actions .btn {
+  flex: 1;
+}
+
+/* error banner（非破壊） */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--alert);
+  margin: 14px 2px 0;
+}
+.banner-text {
+  color: var(--ink);
+  font-size: 0.9375rem;
+  flex: 1;
+}
+.banner-text b {
+  color: var(--alert);
+}
+
+/* cap reached notice inside drawer（購入/解放ボタンは置かない＝正直な上限） */
+.cap-note {
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
+  font-size: 0.9375rem;
+}
+.cap-note b {
+  color: var(--alert);
+}
+
+/* footer */
+.footer {
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+.footer p + p {
+  margin-top: 4px;
+}
+
+/* section headings */
+.section-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 620;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+}
+.section-title {
+  font-size: 1.375rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 2px 0 2px;
+}
+.section-lead {
+  color: var(--ink-secondary);
+  max-width: 60ch;
+}
+.tray-head {
+  margin: 6px 2px 14px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
